@@ -1,0 +1,265 @@
+#!/usr/bin/env bash
+# GARC — Google Workspace Agent Runtime CLI
+# Main entrypoint
+
+set -euo pipefail
+
+GARC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+GARC_LIB="${GARC_DIR}/lib"
+GARC_CONFIG="${HOME}/.garc"
+GARC_CONFIG_ENV="${GARC_CONFIG}/config.env"
+
+# Load config if present
+if [[ -f "${GARC_CONFIG_ENV}" ]]; then
+  # shellcheck source=/dev/null
+  source "${GARC_CONFIG_ENV}"
+fi
+
+# Defaults
+GARC_CACHE_DIR="${GARC_CACHE_DIR:-${GARC_CONFIG}/cache}"
+GARC_CACHE_TTL="${GARC_CACHE_TTL:-300}"
+GARC_DEFAULT_AGENT="${GARC_DEFAULT_AGENT:-main}"
+
+VERSION="0.1.0"
+
+usage() {
+  cat <<EOF
+GARC v${VERSION} — Google Workspace Agent Runtime CLI
+
+Usage: garc <command> [subcommand] [options]
+
+━━━ Core ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  init                        Initialize GARC workspace (config + dirs)
+  setup [all|check|sheets|drive]  Provision GWS resources automatically
+  bootstrap [--agent <id>]    Load disclosure chain from Google Drive
+  status                      Show config and connection health
+
+━━━ Gmail ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  gmail send     --to <email> --subject <text> --body <text> [--cc] [--html]
+  gmail reply    --thread-id <id> --to <email> --body <text>
+  gmail search   <query> [--max N] [--body]
+  gmail read     <message_id>
+  gmail inbox    [--max N] [--unread]
+  gmail draft    --to <email> --subject <text> --body <text>
+  gmail labels
+  gmail profile
+  send "<msg>" --to <email>   Shorthand for gmail send
+
+━━━ Google Calendar ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  calendar today              Events for today
+  calendar week               Events for this week
+  calendar list    [--days N] [--query <text>]
+  calendar create  --summary <text> --start <dt> --end <dt> [--attendees ...]
+  calendar update  <event_id> [--summary ...] [--start ...] [--end ...]
+  calendar delete  <event_id>
+  calendar get     <event_id>
+  calendar freebusy --start <date> --end <date> --emails email1 [...]
+  calendar quick-add "<natural language>"
+  calendar calendars          List all accessible calendars
+
+━━━ Google Drive ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  drive list         [--folder-id <id>] [--query <name>]
+  drive search       <query> [--type doc|sheet|slide|folder|pdf]
+  drive info         <file_id>
+  drive download     --file-id <id> | --folder-id + --filename  [--output <path>]
+  drive upload       <local_path> [--folder-id <id>] [--convert]
+  drive create-folder <name> [--parent-id <id>]
+  drive create-doc   <name> [--folder-id <id>] [--content <text>]
+  drive share        <file_id> --email <email> [--role reader|writer]
+  drive move         <file_id> --to <folder_id>
+  drive delete       <file_id> [--permanent]
+
+━━━ Google Sheets ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  sheets info        [--sheets-id <id>]
+  sheets read        --range <A1:Z100> [--format table|json]
+  sheets write       --range <A1> --values '[[...]]'
+  sheets append      --sheet <name> --values '[...]'
+  sheets search      --sheet <name> --query <text> [--format json]
+  sheets clear       --range <range>
+
+━━━ Memory ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  memory pull                 Sync Sheets memory → local cache
+  memory push "<entry>"       Save entry to Sheets memory
+  memory search <query>       Search memory entries
+
+━━━ Tasks ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  task list        [--list <id>] [--completed] [--format json]
+  task show        <task_id>
+  task create      "<title>" [--due YYYY-MM-DD] [--notes <text>] [--list <id>]
+  task update      <task_id> [--title] [--due] [--notes]
+  task done        <task_id>           Mark task complete
+  task delete      <task_id>
+  task clear-completed                 Remove all completed tasks
+  task tasklists                       List all task lists
+
+━━━ People & Contacts ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  people search    <query>             Search personal contacts
+  people directory <query>             Search GWS org directory
+  people list      [--max N]
+  people show      <contact_id>
+  people create    --name <name> [--email] [--phone] [--company] [--title]
+  people update    <contact_id> [--name] [--email] ...
+  people delete    <contact_id>
+  people lookup    <name>              Quick name → email lookup
+
+━━━ Permission & Approval ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  auth suggest "<task>"       Infer minimum OAuth scopes
+  auth check [--profile <p>]  Verify current token scopes
+  auth login [--profile <p>]  Launch OAuth2 flow
+  auth status                 Show token info
+  approve gate <task_type>    Check execution gate
+  approve list                List pending approvals
+  approve create "<task>"     Create approval request
+  approve act <id> --action approve|reject
+
+━━━ Agents & Queue ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  agent list                  List registered agents
+  agent register [--file]     Register from agents.yaml
+  agent show <id>             Show agent details
+  ingress enqueue  --text "<msg>" [--source gmail|manual] [--sender <email>]
+  ingress list     [--status pending|done|failed|all]
+  ingress next     [--agent <id>]
+  ingress run-once [--agent <id>] [--dry-run]   → outputs Claude prompt
+  ingress execute-stub --queue-id <id>           → show execution plan
+  ingress context  --queue-id <id>               → full Claude-readable bundle
+  ingress delegate --queue-id <id> --to <agent>
+  ingress handoff  --queue-id <id>
+  ingress approve/resume --queue-id <id>
+  ingress done/fail --queue-id <id> [--note <text>]
+  ingress verify   --queue-id <id>
+  ingress stats
+
+━━━ Daemon (Gmail Poller) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  daemon start     [--interval <sec>] [--agent <id>]
+  daemon stop
+  daemon status
+  daemon restart
+  daemon poll-once                    Single poll cycle (foreground)
+  daemon logs      [--follow]
+  daemon install                      Install macOS launchd service
+
+━━━ Knowledge Graph ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  kg build                    Build KG from Drive Docs
+  kg query "<concept>"        Search knowledge graph
+  kg show <doc_id>            Show doc + links
+
+━━━ System ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  heartbeat                   Log system state to Sheets
+
+Options:
+  --help, -h      Show this help
+  --version, -v   Show version
+  --debug         Enable debug output
+  --dry-run       Preview without executing
+  --confirm       Auto-confirm preview-gated operations
+
+Config: ~/.garc/config.env  |  Cache: ~/.garc/cache/
+Docs:   docs/google-cloud-setup.md  |  Quickstart: docs/quickstart.md
+EOF
+}
+
+# Parse global flags
+DEBUG=false
+DRY_RUN=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --debug) DEBUG=true; shift ;;
+    --dry-run) DRY_RUN=true; shift ;;
+    --help|-h) usage; exit 0 ;;
+    --version|-v) echo "garc ${VERSION}"; exit 0 ;;
+    *) break ;;
+  esac
+done
+
+export DEBUG DRY_RUN GARC_DIR GARC_LIB GARC_CONFIG GARC_CACHE_DIR GARC_CACHE_TTL
+
+COMMAND="${1:-help}"
+shift || true
+
+case "${COMMAND}" in
+  init)
+    source "${GARC_LIB}/bootstrap.sh"
+    garc_init "$@"
+    ;;
+  setup)
+    python3 "${GARC_DIR}/scripts/garc-setup.py" "${1:-all}" "${@:2}"
+    ;;
+  bootstrap)
+    source "${GARC_LIB}/bootstrap.sh"
+    garc_bootstrap "$@"
+    ;;
+  status)
+    source "${GARC_LIB}/bootstrap.sh"
+    garc_status "$@"
+    ;;
+  memory)
+    source "${GARC_LIB}/memory.sh"
+    garc_memory "$@"
+    ;;
+  gmail)
+    source "${GARC_LIB}/gmail.sh"
+    garc_gmail "$@"
+    ;;
+  send)
+    # Shorthand: garc send "<msg>" --to <email>
+    source "${GARC_LIB}/send.sh"
+    garc_send "$@"
+    ;;
+  calendar|cal)
+    source "${GARC_LIB}/calendar.sh"
+    garc_calendar "$@"
+    ;;
+  drive)
+    source "${GARC_LIB}/drive.sh"
+    garc_drive "$@"
+    ;;
+  sheets)
+    source "${GARC_LIB}/sheets.sh"
+    garc_sheets "$@"
+    ;;
+  task)
+    source "${GARC_LIB}/task.sh"
+    garc_task "$@"
+    ;;
+  people|contacts)
+    source "${GARC_LIB}/people.sh"
+    garc_people "$@"
+    ;;
+  approve)
+    source "${GARC_LIB}/approve.sh"
+    garc_approve "$@"
+    ;;
+  agent)
+    source "${GARC_LIB}/agent.sh"
+    garc_agent "$@"
+    ;;
+  auth)
+    source "${GARC_LIB}/auth.sh"
+    garc_auth "$@"
+    ;;
+  heartbeat)
+    source "${GARC_LIB}/heartbeat.sh"
+    garc_heartbeat "$@"
+    ;;
+  kg)
+    source "${GARC_LIB}/kg.sh"
+    garc_kg "$@"
+    ;;
+  ingress)
+    source "${GARC_LIB}/ingress.sh"
+    garc_ingress "$@"
+    ;;
+  daemon)
+    source "${GARC_LIB}/daemon.sh"
+    garc_daemon "$@"
+    ;;
+  help|--help|-h)
+    usage
+    ;;
+  *)
+    echo "garc: unknown command '${COMMAND}'" >&2
+    echo "Run 'garc --help' for usage." >&2
+    exit 1
+    ;;
+esac

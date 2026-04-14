@@ -1,0 +1,46 @@
+# Credentials — never commit
+.garc/
+~/.garc/
+credentials.json
+token.json
+service_account.json
+*.key
+*.pem
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local cache and runtime state
+.cache/
+*.log
+*.pid
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Env files (use config.env.example as template)
+config.env
+.env

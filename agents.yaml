@@ -1,0 +1,54 @@
+# GARC Agent Registry
+# Run: garc agent register --file agents.yaml
+
+agents:
+  - id: main
+    model: claude-sonnet-4-6
+    description: General-purpose office-work agent
+    profile: backoffice_agent
+    scopes:
+      - https://www.googleapis.com/auth/drive.file
+      - https://www.googleapis.com/auth/documents
+      - https://www.googleapis.com/auth/spreadsheets
+      - https://www.googleapis.com/auth/gmail.send
+      - https://www.googleapis.com/auth/gmail.readonly
+      - https://www.googleapis.com/auth/calendar
+      - https://www.googleapis.com/auth/tasks
+    drive_folder: main
+    workspace: ~/garc-workspace/main
+
+  - id: crm-agent
+    model: claude-sonnet-4-6
+    description: CRM and customer follow-up specialist
+    profile: writer
+    scopes:
+      - https://www.googleapis.com/auth/spreadsheets
+      - https://www.googleapis.com/auth/gmail.send
+      - https://www.googleapis.com/auth/gmail.readonly
+      - https://www.googleapis.com/auth/calendar
+      - https://www.googleapis.com/auth/contacts.readonly
+    drive_folder: crm-agent
+    workspace: ~/garc-workspace/crm-agent
+
+  - id: doc-agent
+    model: claude-sonnet-4-6
+    description: Document creation and editing specialist
+    profile: writer
+    scopes:
+      - https://www.googleapis.com/auth/drive.file
+      - https://www.googleapis.com/auth/documents
+      - https://www.googleapis.com/auth/spreadsheets.readonly
+    drive_folder: doc-agent
+    workspace: ~/garc-workspace/doc-agent
+
+  - id: expense-processor
+    model: claude-sonnet-4-6
+    description: Expense report processing specialist
+    profile: backoffice_agent
+    scopes:
+      - https://www.googleapis.com/auth/spreadsheets
+      - https://www.googleapis.com/auth/drive.file
+      - https://www.googleapis.com/auth/gmail.send
+      - https://www.googleapis.com/auth/gmail.readonly
+    drive_folder: expense-processor
+    workspace: ~/garc-workspace/expense-processor

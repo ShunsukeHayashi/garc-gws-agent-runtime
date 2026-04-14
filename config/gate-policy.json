@@ -1,0 +1,72 @@
+{
+  "_comment": "Execution gate policy for GARC. Three tiers: none (immediate), preview (--confirm required), approval (approval gate).",
+  "gates": {
+    "none": {
+      "description": "Read-only operations. Execute immediately without confirmation.",
+      "tasks": [
+        "read_document",
+        "read_spreadsheet",
+        "read_drive",
+        "read_email",
+        "read_calendar",
+        "read_tasks",
+        "read_contacts",
+        "read_chat",
+        "read_crm"
+      ]
+    },
+    "preview": {
+      "description": "Medium-risk operations with external visibility or writes. Requires --confirm flag or user acknowledgment.",
+      "tasks": [
+        "create_document",
+        "update_document",
+        "write_spreadsheet",
+        "create_drive",
+        "send_email",
+        "write_calendar",
+        "manage_tasks",
+        "send_chat",
+        "create_crm",
+        "followup_crm",
+        "create_event",
+        "schedule_meeting",
+        "update_event",
+        "delete_event",
+        "invite_attendees",
+        "write_report",
+        "send_report"
+      ]
+    },
+    "approval": {
+      "description": "High-risk, irreversible, or financial operations. Must wait for explicit human approval.",
+      "tasks": [
+        "manage_drive",
+        "manage_email",
+        "manage_contacts",
+        "create_expense",
+        "submit_approval"
+      ]
+    }
+  },
+  "risk_examples": {
+    "none (immediate)": [
+      "read_document",
+      "read_email",
+      "read_calendar",
+      "read_spreadsheet"
+    ],
+    "preview (confirmation)": [
+      "create_document",
+      "update_document",
+      "send_email",
+      "write_calendar",
+      "write_spreadsheet"
+    ],
+    "approval (gate)": [
+      "create_expense",
+      "submit_approval",
+      "manage_drive",
+      "manage_email"
+    ]
+  }
+}

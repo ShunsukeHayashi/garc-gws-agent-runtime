@@ -1,0 +1,770 @@
+{
+  "tasks": {
+    "read_document": {
+      "scopes": [
+        "https://www.googleapis.com/auth/drive.readonly",
+        "https://www.googleapis.com/auth/documents.readonly"
+      ],
+      "identity": "user_access_token",
+      "gate": "none",
+      "description": "Read Google Drive files and Docs"
+    },
+    "create_document": {
+      "scopes": [
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/documents"
+      ],
+      "identity": "user_access_token",
+      "gate": "preview",
+      "description": "Create new Google Docs"
+    },
+    "update_document": {
+      "scopes": [
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/documents"
+      ],
+      "identity": "user_access_token",
+      "gate": "preview",
+      "description": "Update existing Google Docs"
+    },
+    "read_drive": {
+      "scopes": [
+        "https://www.googleapis.com/auth/drive.readonly"
+      ],
+      "identity": "user_access_token",
+      "gate": "none",
+      "description": "List and browse Google Drive files"
+    },
+    "create_drive": {
+      "scopes": [
+        "https://www.googleapis.com/auth/drive.file"
+      ],
+      "identity": "user_access_token",
+      "gate": "preview",
+      "description": "Create files and folders in Google Drive"
+    },
+    "manage_drive": {
+      "scopes": [
+        "https://www.googleapis.com/auth/drive"
+      ],
+      "identity": "user_access_token",
+      "gate": "approval",
+      "description": "Full Drive access including deletion and sharing"
+    },
+    "share_file": {
+      "scopes": [
+        "https://www.googleapis.com/auth/drive"
+      ],
+      "identity": "user_access_token",
+      "gate": "approval",
+      "description": "Share files with other users"
+    },
+    "upload_file": {
+      "scopes": [
+        "https://www.googleapis.com/auth/drive.file"
+      ],
+      "identity": "user_access_token",
+      "gate": "preview",
+      "description": "Upload files to Google Drive"
+    },
+    "delete_file": {
+      "scopes": [
+        "https://www.googleapis.com/auth/drive"
+      ],
+      "identity": "user_access_token",
+      "gate": "approval",
+      "description": "Delete files from Google Drive"
+    },
+    "read_spreadsheet": {
+      "scopes": [
+        "https://www.googleapis.com/auth/spreadsheets.readonly"
+      ],
+      "identity": "user_access_token",
+      "gate": "none",
+      "description": "Read data from Google Sheets"
+    },
+    "write_spreadsheet": {
+      "scopes": [
+        "https://www.googleapis.com/auth/spreadsheets"
+      ],
+      "identity": "user_access_token",
+      "gate": "preview",
+      "description": "Write data to Google Sheets"
+    },
+    "read_email": {
+      "scopes": [
+        "https://www.googleapis.com/auth/gmail.readonly"
+      ],
+      "identity": "user_access_token",
+      "gate": "none",
+      "description": "Read Gmail messages and threads"
+    },
+    "send_email": {
+      "scopes": [
+        "https://www.googleapis.com/auth/gmail.send"
+      ],
+      "identity": "user_access_token",
+      "gate": "preview",
+      "description": "Send Gmail messages"
+    },
+    "reply_email": {
+      "scopes": [
+        "https://www.googleapis.com/auth/gmail.send"
+      ],
+      "identity": "user_access_token",
+      "gate": "preview",
+      "description": "Reply to Gmail threads"
+    },
+    "draft_email": {
+      "scopes": [
+        "https://www.googleapis.com/auth/gmail.compose"
+      ],
+      "identity": "user_access_token",
+      "gate": "none",
+      "description": "Create Gmail drafts (not sent)"
+    },
+    "manage_email": {
+      "scopes": [
+        "https://www.googleapis.com/auth/gmail.modify"
+      ],
+      "identity": "user_access_token",
+      "gate": "approval",
+      "description": "Full Gmail access including delete and label management"
+    },
+    "search_email": {
+      "scopes": [
+        "https://www.googleapis.com/auth/gmail.readonly"
+      ],
+      "identity": "user_access_token",
+      "gate": "none",
+      "description": "Search Gmail messages"
+    },
+    "read_calendar": {
+      "scopes": [
+        "https://www.googleapis.com/auth/calendar.readonly"
+      ],
+      "identity": "user_access_token",
+      "gate": "none",
+      "description": "Read Google Calendar events"
+    },
+    "create_event": {
+      "scopes": [
+        "https://www.googleapis.com/auth/calendar"
+      ],
+      "identity": "user_access_token",
+      "gate": "preview",
+      "description": "Create Google Calendar events"
+    },
+    "update_event": {
+      "scopes": [
+        "https://www.googleapis.com/auth/calendar"
+      ],
+      "identity": "user_access_token",
+      "gate": "preview",
+      "description": "Update Google Calendar events"
+    },
+    "delete_event": {
+      "scopes": [
+        "https://www.googleapis.com/auth/calendar"
+      ],
+      "identity": "user_access_token",
+      "gate": "approval",
+      "description": "Delete Google Calendar events"
+    },
+    "invite_attendees": {
+      "scopes": [
+        "https://www.googleapis.com/auth/calendar"
+      ],
+      "identity": "user_access_token",
+      "gate": "preview",
+      "description": "Invite attendees to calendar events"
+    },
+    "check_freebusy": {
+      "scopes": [
+        "https://www.googleapis.com/auth/calendar.readonly"
+      ],
+      "identity": "user_access_token",
+      "gate": "none",
+      "description": "Check free/busy availability"
+    },
+    "read_tasks": {
+      "scopes": [
+        "https://www.googleapis.com/auth/tasks.readonly"
+      ],
+      "identity": "user_access_token",
+      "gate": "none",
+      "description": "Read Google Tasks"
+    },
+    "create_task": {
+      "scopes": [
+        "https://www.googleapis.com/auth/tasks"
+      ],
+      "identity": "user_access_token",
+      "gate": "preview",
+      "description": "Create Google Tasks"
+    },
+    "complete_task": {
+      "scopes": [
+        "https://www.googleapis.com/auth/tasks"
+      ],
+      "identity": "user_access_token",
+      "gate": "none",
+      "description": "Mark Google Tasks as complete"
+    },
+    "manage_tasks": {
+      "scopes": [
+        "https://www.googleapis.com/auth/tasks"
+      ],
+      "identity": "user_access_token",
+      "gate": "preview",
+      "description": "Full Google Tasks management"
+    },
+    "read_contacts": {
+      "scopes": [
+        "https://www.googleapis.com/auth/contacts.readonly",
+        "https://www.googleapis.com/auth/people.readonly"
+      ],
+      "identity": "user_access_token",
+      "gate": "none",
+      "description": "Read Google Contacts and People directory"
+    },
+    "manage_contacts": {
+      "scopes": [
+        "https://www.googleapis.com/auth/contacts"
+      ],
+      "identity": "user_access_token",
+      "gate": "approval",
+      "description": "Create and update Google Contacts"
+    },
+    "search_people": {
+      "scopes": [
+        "https://www.googleapis.com/auth/people.readonly"
+      ],
+      "identity": "user_access_token",
+      "gate": "none",
+      "description": "Search Google Workspace directory"
+    },
+    "read_chat": {
+      "scopes": [
+        "https://www.googleapis.com/auth/chat.messages.readonly"
+      ],
+      "identity": "bot_access_token",
+      "gate": "none",
+      "description": "Read Google Chat messages"
+    },
+    "send_chat": {
+      "scopes": [
+        "https://www.googleapis.com/auth/chat.messages"
+      ],
+      "identity": "bot_access_token",
+      "gate": "preview",
+      "description": "Send Google Chat messages"
+    },
+    "read_crm": {
+      "scopes": [
+        "https://www.googleapis.com/auth/spreadsheets.readonly"
+      ],
+      "identity": "user_access_token",
+      "gate": "none",
+      "description": "Read CRM data from Google Sheets"
+    },
+    "create_crm": {
+      "scopes": [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/gmail.send"
+      ],
+      "identity": "user_access_token",
+      "gate": "preview",
+      "description": "Create CRM records and send follow-up"
+    },
+    "followup_crm": {
+      "scopes": [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/gmail.send",
+        "https://www.googleapis.com/auth/calendar"
+      ],
+      "identity": "user_access_token",
+      "gate": "preview",
+      "description": "CRM follow-up: update record + email + calendar"
+    },
+    "create_expense": {
+      "scopes": [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/gmail.send"
+      ],
+      "identity": "user_access_token",
+      "gate": "approval",
+      "description": "Create expense report and route to approval"
+    },
+    "submit_approval": {
+      "scopes": [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/gmail.send"
+      ],
+      "identity": "user_access_token",
+      "gate": "approval",
+      "description": "Submit item for approval workflow"
+    },
+    "write_report": {
+      "scopes": [
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/documents",
+        "https://www.googleapis.com/auth/spreadsheets.readonly"
+      ],
+      "identity": "user_access_token",
+      "gate": "preview",
+      "description": "Write and save a report to Drive"
+    },
+    "send_report": {
+      "scopes": [
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/documents",
+        "https://www.googleapis.com/auth/gmail.send"
+      ],
+      "identity": "user_access_token",
+      "gate": "preview",
+      "description": "Write and send report by email"
+    },
+    "schedule_meeting": {
+      "scopes": [
+        "https://www.googleapis.com/auth/calendar",
+        "https://www.googleapis.com/auth/gmail.send",
+        "https://www.googleapis.com/auth/calendar.readonly"
+      ],
+      "identity": "user_access_token",
+      "gate": "preview",
+      "description": "Check availability and schedule a meeting"
+    },
+    "read_analytics": {
+      "scopes": [
+        "https://www.googleapis.com/auth/spreadsheets.readonly",
+        "https://www.googleapis.com/auth/drive.readonly"
+      ],
+      "identity": "user_access_token",
+      "gate": "none",
+      "description": "Read analytics data from Sheets or Drive"
+    },
+    "write_analytics": {
+      "scopes": [
+        "https://www.googleapis.com/auth/spreadsheets"
+      ],
+      "identity": "user_access_token",
+      "gate": "preview",
+      "description": "Write analytics data to Sheets"
+    }
+  },
+  "profiles": {
+    "readonly": {
+      "scopes": [
+        "https://www.googleapis.com/auth/drive.readonly",
+        "https://www.googleapis.com/auth/documents.readonly",
+        "https://www.googleapis.com/auth/spreadsheets.readonly",
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/calendar.readonly",
+        "https://www.googleapis.com/auth/tasks.readonly",
+        "https://www.googleapis.com/auth/contacts.readonly",
+        "https://www.googleapis.com/auth/people.readonly"
+      ],
+      "description": "Read-only access to all GWS resources"
+    },
+    "writer": {
+      "scopes": [
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/documents",
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/gmail.send",
+        "https://www.googleapis.com/auth/gmail.compose",
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/calendar",
+        "https://www.googleapis.com/auth/tasks",
+        "https://www.googleapis.com/auth/contacts.readonly",
+        "https://www.googleapis.com/auth/people.readonly"
+      ],
+      "description": "Write access to owned resources and send email"
+    },
+    "admin": {
+      "scopes": [
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/documents",
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/gmail.modify",
+        "https://www.googleapis.com/auth/calendar",
+        "https://www.googleapis.com/auth/tasks",
+        "https://www.googleapis.com/auth/contacts",
+        "https://www.googleapis.com/auth/people",
+        "https://www.googleapis.com/auth/admin.directory.user.readonly"
+      ],
+      "description": "Full admin access across all GWS resources"
+    },
+    "backoffice_agent": {
+      "scopes": [
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/drive.readonly",
+        "https://www.googleapis.com/auth/documents",
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/gmail.send",
+        "https://www.googleapis.com/auth/gmail.compose",
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/calendar",
+        "https://www.googleapis.com/auth/tasks",
+        "https://www.googleapis.com/auth/contacts.readonly",
+        "https://www.googleapis.com/auth/people.readonly",
+        "https://www.googleapis.com/auth/chat.messages"
+      ],
+      "description": "Back-office automation profile for office-work agents"
+    }
+  },
+  "keyword_patterns": {
+    "read_document": [
+      "read doc",
+      "open doc",
+      "view doc",
+      "check doc",
+      "get doc",
+      "fetch doc",
+      "meeting notes",
+      "notes",
+      "ドキュメント読む",
+      "文書確認",
+      "議事録",
+      "会議メモ",
+      "read file",
+      "ファイル読む",
+      "show doc",
+      "get document"
+    ],
+    "create_document": [
+      "create doc",
+      "write doc",
+      "draft doc",
+      "new doc",
+      "create document",
+      "write document",
+      "作成",
+      "ドキュメント作成",
+      "new document",
+      "google doc",
+      "make a document",
+      "ドキュメントを作",
+      "新しいドキュメント"
+    ],
+    "update_document": [
+      "update doc",
+      "edit doc",
+      "modify doc",
+      "revise doc",
+      "update document",
+      "更新",
+      "編集",
+      "edit document"
+    ],
+    "read_drive": [
+      "list files",
+      "browse drive",
+      "find file",
+      "ファイル一覧",
+      "Drive確認",
+      "list drive",
+      "show files",
+      "download",
+      "ダウンロード",
+      "get file",
+      "fetch file",
+      "retrieve file",
+      "ファイルを取得",
+      "ファイルを開く"
+    ],
+    "upload_file": [
+      "upload",
+      "add file",
+      "put file",
+      "アップロード",
+      "ファイルを追加"
+    ],
+    "create_drive": [
+      "create folder",
+      "new folder",
+      "フォルダ作成",
+      "make folder"
+    ],
+    "share_file": [
+      "share",
+      "共有",
+      "share file",
+      "share doc",
+      "share drive",
+      "grant access",
+      "give access"
+    ],
+    "delete_file": [
+      "delete file",
+      "remove file",
+      "ファイル削除",
+      "trash file"
+    ],
+    "manage_drive": [
+      "manage drive",
+      "full drive",
+      "drive admin"
+    ],
+    "read_spreadsheet": [
+      "read sheet",
+      "check sheet",
+      "view sheet",
+      "スプレッドシート読む",
+      "シート確認",
+      "spreadsheet",
+      "data",
+      "records",
+      "データ",
+      "シート",
+      "read data"
+    ],
+    "write_spreadsheet": [
+      "update sheet",
+      "write sheet",
+      "add row",
+      "シート更新",
+      "データ書き込む",
+      "write data",
+      "update data",
+      "シートに書く",
+      "スプレッドシートに追加",
+      "シートを更新",
+      "記録する"
+    ],
+    "read_email": [
+      "read email",
+      "check inbox",
+      "view mail",
+      "メール確認",
+      "受信箱",
+      "inbox",
+      "check email",
+      "read mail",
+      "メールを読む",
+      "受信メール"
+    ],
+    "search_email": [
+      "search email",
+      "find email",
+      "find mail",
+      "メール検索",
+      "search inbox"
+    ],
+    "send_email": [
+      "send email",
+      "write email",
+      "compose email",
+      "メール送信",
+      "メール書く",
+      "send mail",
+      "email to",
+      "send a mail",
+      "メールを送",
+      "連絡する"
+    ],
+    "reply_email": [
+      "reply email",
+      "reply to",
+      "respond to email",
+      "返信",
+      "reply"
+    ],
+    "draft_email": [
+      "draft email",
+      "draft mail",
+      "メール下書き",
+      "下書き"
+    ],
+    "read_calendar": [
+      "check calendar",
+      "view schedule",
+      "calendar",
+      "schedule",
+      "カレンダー確認",
+      "予定確認",
+      "what's on",
+      "agenda"
+    ],
+    "check_freebusy": [
+      "free busy",
+      "freebusy",
+      "空き時間",
+      "availability",
+      "available",
+      "when is",
+      "暇な時間"
+    ],
+    "create_event": [
+      "add event",
+      "create meeting",
+      "schedule meeting",
+      "予定追加",
+      "会議設定",
+      "book meeting",
+      "create event",
+      "new event",
+      "new meeting",
+      "schedule",
+      "set up meeting",
+      "book a meeting",
+      "arrange meeting",
+      "ミーティング",
+      "会議を作",
+      "スケジュール登録",
+      "日程調整"
+    ],
+    "update_event": [
+      "update event",
+      "edit event",
+      "change meeting",
+      "reschedule",
+      "イベント更新",
+      "予定変更"
+    ],
+    "delete_event": [
+      "delete event",
+      "cancel meeting",
+      "remove event",
+      "予定削除",
+      "キャンセル"
+    ],
+    "invite_attendees": [
+      "invite",
+      "add attendee",
+      "invite to meeting",
+      "招待",
+      "参加者追加"
+    ],
+    "schedule_meeting": [
+      "schedule meeting",
+      "set up meeting",
+      "会議をセット",
+      "ミーティング設定",
+      "book time",
+      "打ち合わせ",
+      "日程調整",
+      "会議の設定",
+      "mtg",
+      "schedule a call"
+    ],
+    "read_tasks": [
+      "check tasks",
+      "list tasks",
+      "todo",
+      "タスク確認",
+      "ToDoリスト",
+      "my tasks",
+      "task list",
+      "やること"
+    ],
+    "create_task": [
+      "add task",
+      "create task",
+      "new task",
+      "タスク追加",
+      "タスク作成",
+      "add to-do"
+    ],
+    "complete_task": [
+      "complete task",
+      "done task",
+      "finish task",
+      "タスク完了",
+      "完了"
+    ],
+    "read_contacts": [
+      "contacts",
+      "address book",
+      "連絡先",
+      "directory",
+      "people",
+      "find person",
+      "人を探す"
+    ],
+    "search_people": [
+      "search people",
+      "find colleague",
+      "who is",
+      "directory search",
+      "社員検索",
+      "同僚検索"
+    ],
+    "send_chat": [
+      "send chat",
+      "chat message",
+      "チャット送信",
+      "google chat",
+      "chat"
+    ],
+    "read_crm": [
+      "crm",
+      "customer",
+      "client",
+      "顧客",
+      "lead",
+      "contact list"
+    ],
+    "create_crm": [
+      "add customer",
+      "create contact",
+      "add lead",
+      "顧客追加",
+      "new client"
+    ],
+    "followup_crm": [
+      "follow up",
+      "follow-up",
+      "フォローアップ",
+      "顧客フォロー",
+      "customer followup"
+    ],
+    "create_expense": [
+      "expense",
+      "経費",
+      "reimbursement",
+      "精算",
+      "費用申請",
+      "expense report"
+    ],
+    "submit_approval": [
+      "approve",
+      "approval",
+      "submit for approval",
+      "承認",
+      "申請",
+      "get approved"
+    ],
+    "write_report": [
+      "write report",
+      "create report",
+      "レポート作成",
+      "報告書",
+      "weekly report",
+      "週次レポート"
+    ],
+    "send_report": [
+      "send report",
+      "email report",
+      "レポートを送る",
+      "報告書送付"
+    ],
+    "read_analytics": [
+      "analytics",
+      "data analysis",
+      "metrics",
+      "stats",
+      "分析",
+      "kpi",
+      "指標"
+    ],
+    "write_analytics": [
+      "update analytics",
+      "write metrics",
+      "データ更新",
+      "kpi更新"
+    ]
+  }
+}
