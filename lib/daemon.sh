@@ -138,41 +138,21 @@ _start_gmail_poller() {
 # Gmail polling loop — the core ingress driver
 # ─────────────────────────────────────────────────────────────────
 
-_gmail_poller_loop() {
+# ── Single poll cycle (shared by loop and poll-once) ─────────────────────────
+_gmail_poll_cycle() {
   local agent_id="${1:-main}"
-  local interval="${2:-60}"
-  local label="${3:-INBOX}"
-  local max_msgs="${4:-10}"
-
+  local max_msgs="${2:-10}"
   local seen_file="${DAEMON_SEEN_DIR}/seen-${agent_id}.txt"
+
   touch "${seen_file}"
 
-  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] [gmail-poller] Starting (agent=${agent_id}, interval=${interval}s, label=${label})"
-
-  # Reload config
-  [[ -f "${GARC_CONFIG:-${HOME}/.garc}/config.env" ]] && \
-    source "${GARC_CONFIG:-${HOME}/.garc}/config.env" 2>/dev/null || true
-
-  while true; do
-    # ── Fetch recent unread emails ───────────────────────────────
-    local raw_msgs fetch_ok
-    raw_msgs=$(python3 "${GARC_DIR}/scripts/garc-gmail-helper.py" inbox \
-      --max "${max_msgs}" --unread 2>/dev/null) && fetch_ok=1 || fetch_ok=0
-
-    if [[ "${fetch_ok}" -eq 0 ]] || [[ -z "${raw_msgs}" ]]; then
-      echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] [gmail-poller] fetch failed, retrying in ${interval}s"
-      sleep "${interval}"
-      continue
-    fi
-
-    # ── Parse and enqueue new messages ───────────────────────────
-    python3 - "${seen_file}" "${agent_id}" <<'PY'
-import json, sys, subprocess, os, re
+  python3 - "${seen_file}" "${agent_id}" "${max_msgs}" <<'PY'
+import json, sys, subprocess, os
 
 seen_file = sys.argv[1]
 agent_id  = sys.argv[2]
+max_msgs  = sys.argv[3]
 garc_dir  = os.environ.get("GARC_DIR", "")
-garc_lib  = os.environ.get("GARC_LIB", "")
 
 # Read seen message IDs
 try:
@@ -181,55 +161,49 @@ try:
 except Exception:
     seen = set()
 
-# Parse inbox output (table format from gmail helper)
-# Format: ID | FROM | SUBJECT | DATE | SNIPPET
-raw = sys.stdin.read() if not sys.stdin.isatty() else ""
-
-# Actually re-fetch as JSON for reliable parsing
+# Fetch inbox as JSON
 result = subprocess.run(
     ["python3", os.path.join(garc_dir, "scripts", "garc-gmail-helper.py"),
-     "inbox", "--max", "10", "--unread", "--format", "json"],
+     "inbox", "--max", max_msgs, "--unread", "--format", "json"],
     capture_output=True, text=True
 )
 if result.returncode != 0:
     print(f"[gmail-poller] inbox fetch error: {result.stderr.strip()}", flush=True)
-    sys.exit(0)
+    sys.exit(1)
 
 try:
     messages = json.loads(result.stdout)
 except Exception as e:
     print(f"[gmail-poller] JSON parse error: {e}", flush=True)
-    sys.exit(0)
+    sys.exit(1)
 
 if not isinstance(messages, list):
     messages = []
 
 new_seen = []
+enqueued = 0
 for msg in messages:
     msg_id  = msg.get("id", "")
     sender  = msg.get("from", "")
     subject = msg.get("subject", "(no subject)")
     snippet = msg.get("snippet", "")[:120]
 
-    if not msg_id or msg_id in seen:
+    if not msg_id:
+        continue
+    if msg_id in seen:
         new_seen.append(msg_id)
         continue
 
-    # Build a human-readable task description
     text = f"Email from {sender}: {subject}"
     if snippet:
         text += f" — {snippet}"
 
-    cmd = [
-        "garc", "ingress", "enqueue",
-        "--text", text,
-        "--source", "gmail",
-        "--sender", sender,
-        "--agent", agent_id,
-    ]
-    # Use larc path
     garc_bin = os.path.join(garc_dir, "bin", "garc")
-    cmd[0] = garc_bin
+    cmd = [garc_bin, "ingress", "enqueue",
+           "--text", text,
+           "--source", "gmail",
+           "--sender", sender,
+           "--agent", agent_id]
 
     env = os.environ.copy()
     env["GARC_DIR"] = garc_dir
@@ -237,6 +211,7 @@ for msg in messages:
     r = subprocess.run(cmd, capture_output=True, text=True, env=env)
     if r.returncode == 0:
         print(f"[gmail-poller] Enqueued: {msg_id[:16]} from {sender[:30]}", flush=True)
+        enqueued += 1
     else:
         print(f"[gmail-poller] Enqueue failed: {r.stderr.strip()}", flush=True)
 
@@ -245,8 +220,27 @@ for msg in messages:
 if new_seen:
     with open(seen_file, "a") as f:
         f.write("\n".join(new_seen) + "\n")
-PY
 
+print(f"[gmail-poller] Cycle done — {enqueued} enqueued, {len(messages) - enqueued} skipped", flush=True)
+PY
+}
+
+_gmail_poller_loop() {
+  local agent_id="${1:-main}"
+  local interval="${2:-60}"
+  local label="${3:-INBOX}"
+  local max_msgs="${4:-10}"
+
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] [gmail-poller] Starting (agent=${agent_id}, interval=${interval}s, label=${label})"
+
+  # Reload config
+  [[ -f "${GARC_CONFIG:-${HOME}/.garc}/config.env" ]] && \
+    source "${GARC_CONFIG:-${HOME}/.garc}/config.env" 2>/dev/null || true
+
+  while true; do
+    echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] [gmail-poller] Polling..."
+    _gmail_poll_cycle "${agent_id}" "${max_msgs}" || \
+      echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] [gmail-poller] cycle error, will retry"
     sleep "${interval}"
   done
 }
@@ -337,12 +331,17 @@ _daemon_poll_once() {
 
   _daemon_ensure_dirs
 
+  # Reload config so GARC_DIR etc. are available in subprocesses
+  if [[ -f "${GARC_CONFIG:-${HOME}/.garc}/config.env" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "${GARC_CONFIG:-${HOME}/.garc}/config.env" 2>/dev/null || true
+    set +a
+  fi
+
   echo "🔍 Polling Gmail inbox (agent=${agent}, max=${max_msgs})..."
-  _gmail_poller_loop "${agent}" "0" "INBOX" "${max_msgs}" &
-  local pid=$!
-  # Wait a moment for one cycle to complete then stop
-  sleep 5
-  kill "${pid}" 2>/dev/null || true
+  # Run a single cycle synchronously — no background process, no timeout kill
+  _gmail_poll_cycle "${agent}" "${max_msgs}"
   echo ""
   echo "Poll cycle complete. Check: garc ingress list"
 }
@@ -373,26 +372,56 @@ _daemon_logs() {
 }
 
 # ─────────────────────────────────────────────────────────────────
-# install — macOS launchd plist for auto-start on login
+# install — OS-aware service installation (macOS launchd or Linux systemd)
 # ─────────────────────────────────────────────────────────────────
 
 _daemon_install_launchd() {
+  # Backward-compatible alias — delegates to _daemon_install_service
+  _daemon_install_service "$@"
+}
+
+_daemon_install_service() {
   local agent="${GARC_DEFAULT_AGENT:-main}"
   local interval=60
-  local label="com.garc.gmail-poller"
-  local plist_path="${HOME}/Library/LaunchAgents/${label}.plist"
+  local system_wide=false
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --agent|-a)    agent="$2"; shift 2 ;;
       --interval|-i) interval="$2"; shift 2 ;;
+      --system)      system_wide=true; shift ;;
       *) shift ;;
     esac
   done
 
   _daemon_ensure_dirs
 
+  local os_type
+  os_type="$(uname -s)"
+
+  case "${os_type}" in
+    Darwin)
+      _daemon_install_launchd_plist "${agent}" "${interval}"
+      ;;
+    Linux)
+      _daemon_install_systemd_unit "${agent}" "${interval}" "${system_wide}"
+      ;;
+    *)
+      echo "⚠️  Unsupported OS: ${os_type}"
+      echo "   Manual setup: run 'garc daemon start' from your init system."
+      return 1
+      ;;
+  esac
+}
+
+_daemon_install_launchd_plist() {
+  local agent="$1"
+  local interval="$2"
+  local label="com.garc.gmail-poller"
+  local plist_path="${HOME}/Library/LaunchAgents/${label}.plist"
   local garc_bin="${GARC_DIR}/bin/garc"
+
+  mkdir -p "$(dirname "${plist_path}")"
 
   cat > "${plist_path}" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -436,4 +465,81 @@ EOF
   echo ""
   echo "To unload:"
   echo "  launchctl unload ${plist_path}"
+}
+
+_daemon_install_systemd_unit() {
+  local agent="$1"
+  local interval="$2"
+  local system_wide="$3"
+  local garc_bin="${GARC_DIR}/bin/garc"
+  local unit_name="garc-gmail-poller"
+
+  local unit_dir
+  if [[ "${system_wide}" == "true" ]]; then
+    unit_dir="/etc/systemd/system"
+  else
+    unit_dir="${HOME}/.config/systemd/user"
+  fi
+
+  mkdir -p "${unit_dir}"
+  local unit_path="${unit_dir}/${unit_name}.service"
+  local timer_path="${unit_dir}/${unit_name}.timer"
+
+  # Service unit — runs one poll cycle
+  cat > "${unit_path}" <<EOF
+[Unit]
+Description=GARC Gmail Poller (single cycle)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=${garc_bin} daemon poll-once --agent ${agent}
+Environment=GARC_DIR=${GARC_DIR}
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+StandardOutput=append:${GMAIL_POLLER_LOG}
+StandardError=append:${GMAIL_POLLER_LOG}
+
+[Install]
+WantedBy=default.target
+EOF
+
+  # Timer unit — triggers service every N seconds
+  cat > "${timer_path}" <<EOF
+[Unit]
+Description=GARC Gmail Poller Timer
+
+[Timer]
+OnBootSec=30
+OnUnitActiveSec=${interval}
+Unit=${unit_name}.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+  echo "✅ Installed systemd units:"
+  echo "   ${unit_path}"
+  echo "   ${timer_path}"
+  echo ""
+
+  if [[ "${system_wide}" == "true" ]]; then
+    echo "To activate (system-wide, requires sudo):"
+    echo "  sudo systemctl daemon-reload"
+    echo "  sudo systemctl enable --now ${unit_name}.timer"
+    echo ""
+    echo "To disable:"
+    echo "  sudo systemctl disable --now ${unit_name}.timer"
+  else
+    echo "To activate (user-level):"
+    echo "  systemctl --user daemon-reload"
+    echo "  systemctl --user enable --now ${unit_name}.timer"
+    echo "  systemctl --user status ${unit_name}.timer"
+    echo ""
+    echo "To disable:"
+    echo "  systemctl --user disable --now ${unit_name}.timer"
+    echo ""
+    echo "To view logs:"
+    echo "  journalctl --user -u ${unit_name}.service -f"
+  fi
 }

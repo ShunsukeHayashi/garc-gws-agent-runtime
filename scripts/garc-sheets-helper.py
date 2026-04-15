@@ -22,6 +22,7 @@ SHEET_APPROVAL = "approval"
 SHEET_TASKS_LOG = "tasks_log"
 SHEET_EMAIL_LOG = "email_log"
 SHEET_CALENDAR_LOG = "calendar_log"
+SHEET_AUDIT = "audit"
 
 
 def get_svc():
@@ -168,6 +169,80 @@ def clear_range(sheets_id: str, range_: str):
     print(f"✅ Cleared: {range_}")
 
 
+def trim_sheet(sheets_id: str, sheet_name: str) -> int:
+    """Delete trailing empty rows from a sheet. Returns number of rows deleted."""
+    svc = get_svc()
+
+    # Get all data to find last non-empty row
+    result = svc.spreadsheets().values().get(
+        spreadsheetId=sheets_id, range=f"{sheet_name}!A:Z",
+        valueRenderOption="UNFORMATTED_VALUE"
+    ).execute()
+    rows = result.get("values", [])
+
+    # Find last row index with any data (0-indexed)
+    last_data_row = -1
+    for i, row in enumerate(rows):
+        if any(str(cell).strip() for cell in row):
+            last_data_row = i
+
+    # Get sheet metadata for sheetId and total row count
+    meta = svc.spreadsheets().get(spreadsheetId=sheets_id).execute()
+    sheet_meta = next(
+        (s for s in meta.get("sheets", []) if s["properties"]["title"] == sheet_name),
+        None
+    )
+    if not sheet_meta:
+        print(f"Sheet '{sheet_name}' not found.")
+        return 0
+
+    sheet_id = sheet_meta["properties"]["sheetId"]
+    total_rows = sheet_meta["properties"]["gridProperties"]["rowCount"]
+    first_empty = last_data_row + 1  # 0-indexed row after last data
+
+    # Keep at least 1 buffer row after data (avoid deleting to the bone)
+    delete_from = first_empty + 1
+    rows_to_delete = total_rows - delete_from
+
+    if rows_to_delete <= 0:
+        print(f"  {sheet_name}: no trailing empty rows to remove.")
+        return 0
+
+    svc.spreadsheets().batchUpdate(
+        spreadsheetId=sheets_id,
+        body={
+            "requests": [{
+                "deleteDimension": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": "ROWS",
+                        "startIndex": delete_from,
+                        "endIndex": total_rows,
+                    }
+                }
+            }]
+        }
+    ).execute()
+
+    print(f"  ✅ {sheet_name}: deleted {rows_to_delete} empty rows "
+          f"(kept rows 1–{delete_from})")
+    return rows_to_delete
+
+
+def clean_all_sheets(sheets_id: str):
+    """Trim trailing empty rows from all GARC-managed sheets."""
+    sheets = [SHEET_MEMORY, SHEET_AGENTS, SHEET_QUEUE, SHEET_HEARTBEAT,
+              SHEET_APPROVAL, SHEET_TASKS_LOG, SHEET_EMAIL_LOG, SHEET_CALENDAR_LOG]
+    total = 0
+    for name in sheets:
+        try:
+            deleted = trim_sheet(sheets_id, name)
+            total += deleted
+        except Exception as e:
+            print(f"  ⚠️  {name}: {e}")
+    print(f"\nTotal rows removed: {total}")
+
+
 # ─── GARC-specific operations ─────────────────────────────────────────────────
 
 @with_retry()
@@ -227,20 +302,58 @@ def agent_register(sheets_id: str, yaml_file: str):
         return
 
     agents = config.get("agents", [])
+    if not agents:
+        print("No agents defined in YAML.")
+        return
+
+    # Fetch existing rows to detect duplicates
+    svc = get_svc()
+    result = svc.spreadsheets().values().get(
+        spreadsheetId=sheets_id, range=f"{SHEET_AGENTS}!A:H"
+    ).execute()
+    existing_rows = result.get("values", [])
+    # Build map: agent_id -> row_number (1-indexed, row 1 = header)
+    existing_ids: dict[str, int] = {}
+    for i, row in enumerate(existing_rows):
+        if i == 0:
+            continue  # skip header
+        if row and row[0]:
+            existing_ids[row[0]] = i + 1  # 1-indexed sheet row
+
     ts = utc_now()
+    added = updated = 0
     for agent in agents:
+        agent_id = agent.get("id", "")
+        if not agent_id:
+            continue
         scopes = ",".join(agent.get("scopes", []))
-        append_row(sheets_id, SHEET_AGENTS, [
-            agent.get("id", ""),
+        row_values = [
+            agent_id,
             agent.get("model", ""),
             scopes,
             agent.get("description", ""),
             agent.get("profile", ""),
             "active",
             agent.get("drive_folder", ""),
-            ts
-        ])
-    print(f"✅ Registered {len(agents)} agents")
+            ts,
+        ]
+        if agent_id in existing_ids:
+            # Update existing row in-place
+            row_num = existing_ids[agent_id]
+            svc.spreadsheets().values().update(
+                spreadsheetId=sheets_id,
+                range=f"{SHEET_AGENTS}!A{row_num}:H{row_num}",
+                valueInputOption="USER_ENTERED",
+                body={"values": [row_values]},
+            ).execute()
+            print(f"  ↻ Updated: {agent_id} (row {row_num})")
+            updated += 1
+        else:
+            append_row(sheets_id, SHEET_AGENTS, row_values)
+            print(f"  ✅ Registered: {agent_id}")
+            added += 1
+
+    print(f"\nDone — {added} added, {updated} updated (no duplicates created)")
 
 
 @with_retry()
@@ -301,6 +414,57 @@ def approval_act(sheets_id: str, approval_id: str, action: str, timestamp: str):
     print(f"Approval not found: {approval_id}")
 
 
+def audit_append(sheets_id: str, agent_id: str, command: str, args_str: str,
+                 result: str, user: str, timestamp: str):
+    """Append an audit event row."""
+    append_row(sheets_id, SHEET_AUDIT, [
+        timestamp, agent_id, user, command, args_str, result
+    ])
+
+
+def audit_list(sheets_id: str, agent_id: str = "", since: str = "",
+               output_format: str = "table"):
+    """List audit events, optionally filtered by agent or date."""
+    svc = get_svc()
+    result = svc.spreadsheets().values().get(
+        spreadsheetId=sheets_id, range=f"{SHEET_AUDIT}!A:F"
+    ).execute()
+    rows = result.get("values", [])
+    if not rows:
+        print("(no audit events)")
+        return
+
+    headers = rows[0] if rows else []
+    data = rows[1:]
+
+    # Filter
+    if agent_id:
+        data = [r for r in data if len(r) > 1 and r[1] == agent_id]
+    if since:
+        data = [r for r in data if r and r[0] >= since]
+
+    if not data:
+        print("No audit events match the filter.")
+        return
+
+    if output_format == "json":
+        records = [dict(zip(headers, r + [""] * (len(headers) - len(r)))) for r in data]
+        print(json.dumps(records, ensure_ascii=False, indent=2))
+    else:
+        widths = [min(max(len(str(headers[i])) if i < len(headers) else 0,
+                         max((len(str(r[i] if i < len(r) else "")) for r in data), default=0)), 30)
+                  for i in range(len(headers))]
+        header_line = "  ".join(str(headers[i] if i < len(headers) else "").ljust(widths[i])
+                                for i in range(len(headers)))
+        print(header_line)
+        print("  ".join("─" * w for w in widths))
+        for row in data[-50:]:  # last 50 rows
+            print("  ".join(str(row[i] if i < len(row) else "").ljust(widths[i])[:widths[i]]
+                            for i in range(len(headers))))
+        if len(data) > 50:
+            print(f"  ... ({len(data) - 50} older events not shown)")
+
+
 def main():
     parser = argparse.ArgumentParser(description="GARC Sheets Helper")
     sub = parser.add_subparsers(dest="command")
@@ -334,6 +498,28 @@ def main():
     clp = sub.add_parser("clear", help="Clear range")
     clp.add_argument("--sheets-id", required=True)
     clp.add_argument("--range", required=True, dest="range_")
+
+    trp = sub.add_parser("trim-sheet", help="Delete trailing empty rows from a sheet")
+    trp.add_argument("--sheets-id", required=True)
+    trp.add_argument("--sheet", required=True)
+
+    cap = sub.add_parser("clean-all", help="Trim all GARC-managed sheets")
+    cap.add_argument("--sheets-id", required=True)
+
+    aap = sub.add_parser("audit-append", help="Append an audit event")
+    aap.add_argument("--sheets-id", required=True)
+    aap.add_argument("--agent-id", default="")
+    aap.add_argument("--cmd", required=True, dest="cmd_name")
+    aap.add_argument("--args", default="", dest="args_str")
+    aap.add_argument("--result", default="ok")
+    aap.add_argument("--user", default="")
+    aap.add_argument("--timestamp", default="")
+
+    alp = sub.add_parser("audit-list", help="List audit events")
+    alp.add_argument("--sheets-id", required=True)
+    alp.add_argument("--agent-id", default="")
+    alp.add_argument("--since", default="", help="ISO date filter (YYYY-MM-DD)")
+    alp.add_argument("--format", default="table", choices=["table", "json"])
 
     # GARC-specific
     mpl = sub.add_parser("memory-pull")
@@ -401,6 +587,16 @@ def main():
         get_sheet_info(args.sheets_id)
     elif args.command == "clear":
         clear_range(args.sheets_id, args.range_)
+    elif args.command == "trim-sheet":
+        trim_sheet(args.sheets_id, args.sheet)
+    elif args.command == "clean-all":
+        clean_all_sheets(args.sheets_id)
+    elif args.command == "audit-append":
+        ts = args.timestamp or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        audit_append(args.sheets_id, args.agent_id, args.cmd_name,
+                     args.args_str, args.result, args.user, ts)
+    elif args.command == "audit-list":
+        audit_list(args.sheets_id, args.agent_id, args.since, args.format)
     elif args.command == "memory-pull":
         memory_pull(args.sheets_id, args.agent_id, args.output)
     elif args.command == "memory-push":

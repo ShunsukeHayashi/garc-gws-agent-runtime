@@ -7,10 +7,18 @@ import json
 import os
 import sys
 import time
+import warnings
 import functools
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Any
+
+# Suppress noisy deprecation warnings from urllib3 / requests bundled
+# inside google-auth and google-api-python-client on Python 3.12+
+warnings.filterwarnings("ignore", message=".*urllib3.*", category=DeprecationWarning)
+warnings.filterwarnings("ignore", message=".*ssl.wrap_socket.*", category=DeprecationWarning)
+warnings.filterwarnings("ignore", message=".*imp module.*", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="googleapiclient")
 
 GARC_CONFIG_DIR = Path(os.environ.get("GARC_CONFIG_DIR", Path.home() / ".garc"))
 TOKEN_FILE = Path(os.environ.get("GARC_TOKEN_FILE", GARC_CONFIG_DIR / "token.json"))
@@ -82,21 +90,36 @@ def get_credentials(scopes: Optional[list] = None, use_service_account: bool = F
     try:
         from google.oauth2.credentials import Credentials
         from google.auth.transport.requests import Request
+        from google.auth.exceptions import RefreshError
 
         creds = None
         if TOKEN_FILE.exists():
             creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), scopes)
 
         if creds and creds.valid:
-            return creds
+            # Verify the token covers the requested scopes
+            if _scopes_covered(creds, scopes):
+                return creds
+            # Scope mismatch — need re-auth
+            print("⚠️  Token scopes insufficient for requested operation.", file=sys.stderr)
+            print("   Re-authenticating to add required scopes...", file=sys.stderr)
+            creds = None
 
         if creds and creds.expired and creds.refresh_token:
             try:
                 creds.refresh(Request())
                 _save_token(creds)
                 return creds
+            except RefreshError as e:
+                # Token revoked or expired beyond refresh — delete and re-auth
+                print(f"⚠️  Token refresh failed (revoked or expired): {e}", file=sys.stderr)
+                print("   Deleting stale token. You will be prompted to log in again.", file=sys.stderr)
+                TOKEN_FILE.unlink(missing_ok=True)
+                creds = None
             except Exception as e:
-                print(f"⚠️  Token refresh failed: {e}", file=sys.stderr)
+                print(f"⚠️  Token refresh error: {e}", file=sys.stderr)
+                TOKEN_FILE.unlink(missing_ok=True)
+                creds = None
 
         # Need fresh OAuth flow
         if not CREDENTIALS_FILE.exists():
@@ -115,6 +138,17 @@ def get_credentials(scopes: Optional[list] = None, use_service_account: bool = F
         print(f"❌ Missing dependency: {e}", file=sys.stderr)
         print("   Run: pip install -r requirements.txt", file=sys.stderr)
         sys.exit(1)
+
+
+def _scopes_covered(creds, requested_scopes: list) -> bool:
+    """Return True if the credential's granted scopes cover all requested scopes."""
+    if not requested_scopes:
+        return True
+    granted = set(getattr(creds, "scopes", None) or [])
+    if not granted:
+        # Token file may not carry scope info — assume OK to avoid spurious re-auth
+        return True
+    return all(s in granted for s in requested_scopes)
 
 
 def _save_token(creds):

@@ -220,6 +220,79 @@ def show_status():
         print(f"Error reading token: {e}")
 
 
+def revoke_token():
+    """Revoke the stored OAuth token and delete the token file."""
+    if not TOKEN_FILE.exists():
+        print(f"No token file found at {TOKEN_FILE}")
+        return
+
+    try:
+        import requests as req_lib
+        with open(TOKEN_FILE) as f:
+            token_data = json.load(f)
+
+        token = token_data.get("token") or token_data.get("access_token", "")
+        if token:
+            resp = req_lib.post(
+                "https://oauth2.googleapis.com/revoke",
+                params={"token": token},
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                print("✅ Token revoked at Google.")
+            else:
+                print(f"⚠️  Revocation response: {resp.status_code} — {resp.text[:80]}")
+        else:
+            print("⚠️  No access token in token file — skipping remote revocation.")
+    except Exception as e:
+        print(f"⚠️  Could not revoke token remotely: {e}")
+
+    TOKEN_FILE.unlink(missing_ok=True)
+    print(f"✅ Deleted: {TOKEN_FILE}")
+    print("   Run 'garc auth login' to re-authenticate.")
+
+
+def service_account_verify(sa_file: str):
+    """Verify service account credentials by listing Drive files."""
+    sa_path = Path(sa_file)
+    if not sa_path.exists():
+        print(f"❌ Service account file not found: {sa_path}")
+        sys.exit(1)
+
+    try:
+        from google.oauth2 import service_account
+        from googleapiclient.discovery import build
+
+        with open(sa_path) as f:
+            sa_data = json.load(f)
+
+        print(f"Service Account: {sa_data.get('client_email', 'N/A')}")
+        print(f"Project:         {sa_data.get('project_id', 'N/A')}")
+
+        scopes = ["https://www.googleapis.com/auth/drive.readonly"]
+        creds = service_account.Credentials.from_service_account_file(str(sa_path), scopes=scopes)
+
+        # Check if GARC_IMPERSONATE_EMAIL is set for DWD
+        impersonate = os.environ.get("GARC_IMPERSONATE_EMAIL", "")
+        if impersonate:
+            creds = creds.with_subject(impersonate)
+            print(f"Impersonating:   {impersonate}")
+
+        svc = build("drive", "v3", credentials=creds, cache_discovery=False)
+        resp = svc.files().list(pageSize=1, fields="files(id,name)").execute()
+        files = resp.get("files", [])
+        print(f"\n✅ Service account is valid. Drive access confirmed ({len(files)} file(s) visible).")
+
+        if not impersonate:
+            print("\n💡 Tip: For Domain-wide Delegation, set GARC_IMPERSONATE_EMAIL=user@yourdomain.com")
+            print("   Then re-run 'garc auth service-account verify'.")
+
+    except Exception as e:
+        print(f"❌ Service account verification failed: {e}")
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(description="GARC Auth Helper")
     subparsers = parser.add_subparsers(dest="command")
@@ -239,6 +312,13 @@ def main():
     # status
     subparsers.add_parser("status", help="Show token status")
 
+    # revoke
+    subparsers.add_parser("revoke", help="Revoke and delete stored token")
+
+    # service-account-verify
+    sav_parser = subparsers.add_parser("service-account-verify", help="Verify service account credentials")
+    sav_parser.add_argument("--file", required=True, help="Path to service account JSON file")
+
     args = parser.parse_args()
 
     if args.command == "suggest":
@@ -249,6 +329,10 @@ def main():
         login(args.profile)
     elif args.command == "status":
         show_status()
+    elif args.command == "revoke":
+        revoke_token()
+    elif args.command == "service-account-verify":
+        service_account_verify(args.file)
     else:
         parser.print_help()
 

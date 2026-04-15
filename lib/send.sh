@@ -3,13 +3,26 @@
 # Replaces Lark IM with Gmail or Google Chat
 
 garc_send() {
+  local subcommand="${1:-}"
+
+  # Support 'garc send chat ...' / 'garc send email ...' sub-dispatching
+  case "${subcommand}" in
+    chat)
+      shift
+      _garc_send_chat_cmd "$@"
+      return $?
+      ;;
+    email)
+      shift
+      ;;  # fall through to default Gmail path
+  esac
+
   local message=""
   local to="${GARC_GMAIL_DEFAULT_TO:-}"
   local subject="GARC Agent Notification"
   local use_chat=false
   local space_id="${GARC_CHAT_SPACE_ID:-}"
 
-  # Parse message (first non-flag argument)
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --to) to="$2"; shift 2 ;;
@@ -21,7 +34,15 @@ garc_send() {
   done
 
   if [[ -z "${message}" ]]; then
-    echo "Usage: garc send \"<message>\" [--to <email>] [--chat] [--space <space_id>]"
+    cat <<EOF
+Usage:
+  garc send "<message>" [--to <email>] [--subject <s>]   # Gmail
+  garc send --chat "<message>" [--space <space_id>]       # Chat
+  garc send chat <subcommand>                             # Chat management
+    chat send "<message>" [--space <id>] [--thread <key>]
+    chat list-spaces
+    chat list-messages [--space <id>] [--max N]
+EOF
     return 1
   fi
 
@@ -30,6 +51,44 @@ garc_send() {
   else
     _garc_send_gmail "${message}" "${to}" "${subject}"
   fi
+}
+
+_garc_send_chat_cmd() {
+  local sub="${1:-send}"
+  shift || true
+  local message="" space_id="${GARC_CHAT_SPACE_ID:-}" thread_key="" max=25
+
+  case "${sub}" in
+    list-spaces)
+      python3 "${GARC_DIR}/scripts/garc-chat-helper.py" list-spaces
+      return $?
+      ;;
+    list-messages)
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --space) space_id="$2"; shift 2 ;;
+          --max) max="$2"; shift 2 ;;
+          *) shift ;;
+        esac
+      done
+      [[ -z "${space_id}" ]] && { echo "Error: --space required"; return 1; }
+      python3 "${GARC_DIR}/scripts/garc-chat-helper.py" list-messages \
+        --space-id "${space_id}" --max "${max}"
+      return $?
+      ;;
+    send|*)
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --space) space_id="$2"; shift 2 ;;
+          --thread) thread_key="$2"; shift 2 ;;
+          *) message="${message:+${message} }$1"; shift ;;
+        esac
+      done
+      [[ -z "${message}" ]] && { echo "Usage: garc send chat send \"<message>\" [--space <id>]"; return 1; }
+      _garc_send_chat "${message}" "${space_id}" "${thread_key}"
+      return $?
+      ;;
+  esac
 }
 
 _garc_send_gmail() {
@@ -59,7 +118,8 @@ _garc_send_gmail() {
 
 _garc_send_chat() {
   local message="$1"
-  local space_id="$2"
+  local space_id="${2:-${GARC_CHAT_SPACE_ID:-}}"
+  local thread_key="${3:-}"
 
   if [[ -z "${space_id}" ]]; then
     echo "Error: No Chat space. Set GARC_CHAT_SPACE_ID or use --space <space_id>" >&2
@@ -75,5 +135,6 @@ _garc_send_chat() {
 
   python3 "${GARC_DIR}/scripts/garc-chat-helper.py" send \
     --space-id "${space_id}" \
-    --message "${message}"
+    --message "${message}" \
+    ${thread_key:+--thread-key "${thread_key}"}
 }

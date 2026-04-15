@@ -3,6 +3,7 @@
 # Google Docs replaces Lark Wiki as the knowledge graph surface
 
 GARC_KG_CACHE="${GARC_CACHE_DIR:-${HOME}/.garc/cache}/knowledge-graph.json"
+KG_QUERY_HELPER="${GARC_DIR}/scripts/garc-kg-query.py"
 
 garc_kg() {
   local subcommand="${1:-help}"
@@ -13,37 +14,70 @@ garc_kg() {
     query) garc_kg_query "$@" ;;
     show)  garc_kg_show "$@" ;;
     *)
-      echo "Usage: garc kg <build|query|show>"
+      cat <<EOF
+Usage: garc kg <subcommand>
+
+Subcommands:
+  build   [--folder-id <id>] [--depth <N>]   Build KG index from Drive Docs
+  query   "<keyword>" [--max <N>]             Search knowledge graph
+  show    <doc_id>                            Show doc metadata and links
+EOF
       return 1
       ;;
   esac
 }
 
 # garc kg build
-# Crawls Google Drive folder and builds knowledge graph from Docs
 garc_kg_build() {
   local folder_id="${GARC_DRIVE_FOLDER_ID:-}"
+  local depth=3
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --folder-id|-f) folder_id="$2"; shift 2 ;;
+      --depth|-d) depth="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
 
   if [[ -z "${folder_id}" ]]; then
-    echo "Error: GARC_DRIVE_FOLDER_ID not set" >&2
+    echo "Error: GARC_DRIVE_FOLDER_ID not set. Use --folder-id or run 'garc setup all'." >&2
     return 1
   fi
+
+  local cache_dir
+  cache_dir="$(dirname "${GARC_KG_CACHE}")"
+  mkdir -p "${cache_dir}"
 
   echo "Building knowledge graph from Google Drive folder: ${folder_id}"
 
   python3 "${GARC_DIR}/scripts/garc-drive-helper.py" kg-build \
     --folder-id "${folder_id}" \
-    --output "${GARC_KG_CACHE}"
+    --output "${GARC_KG_CACHE}" \
+    --depth "${depth}"
 
-  echo "✅ Knowledge graph built: ${GARC_KG_CACHE}"
+  if [[ -f "${GARC_KG_CACHE}" ]]; then
+    local count
+    count=$(python3 -c "import json; d=json.load(open('${GARC_KG_CACHE}')); print(d.get('node_count', 0))" 2>/dev/null || echo "?")
+    echo "✅ Knowledge graph built: ${count} docs → ${GARC_KG_CACHE}"
+  fi
 }
 
 # garc kg query "<concept>"
 garc_kg_query() {
-  local query="$*"
+  local max=10
+  local terms=()
 
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --max|-n) max="$2"; shift 2 ;;
+      *) terms+=("$1"); shift ;;
+    esac
+  done
+
+  local query="${terms[*]:-}"
   if [[ -z "${query}" ]]; then
-    echo "Usage: garc kg query \"<concept>\""
+    echo "Usage: garc kg query \"<concept>\" [--max N]"
     return 1
   fi
 
@@ -52,33 +86,11 @@ garc_kg_query() {
     return 1
   fi
 
-  python3 -c "
-import json, sys
-query = '${query}'.lower()
-with open('${GARC_KG_CACHE}') as f:
-    kg = json.load(f)
-
-matches = []
-for node in kg.get('nodes', []):
-    name = node.get('title', '').lower()
-    content = node.get('content_preview', '').lower()
-    if query in name or query in content:
-        matches.append(node)
-
-if not matches:
-    print(f'No results for: ${query}')
-    sys.exit(0)
-
-print(f'Results for \"{query}\" ({len(matches)} matches):')
-for m in matches[:10]:
-    print(f'  - [{m.get(\"doc_id\",\"\")}] {m.get(\"title\",\"\")}')
-    if m.get('content_preview'):
-        preview = m['content_preview'][:100].replace('\n', ' ')
-        print(f'    {preview}...')
-    links = m.get('links', [])
-    if links:
-        print(f'    Links: {len(links)} documents')
-"
+  # Pass query via argv to avoid shell injection
+  python3 "${GARC_DIR}/scripts/garc-kg-query.py" query \
+    --cache "${GARC_KG_CACHE}" \
+    --query "${query}" \
+    --max "${max}"
 }
 
 # garc kg show <doc_id>
@@ -95,29 +107,7 @@ garc_kg_show() {
     return 1
   fi
 
-  python3 -c "
-import json
-doc_id = '${doc_id}'
-with open('${GARC_KG_CACHE}') as f:
-    kg = json.load(f)
-
-for node in kg.get('nodes', []):
-    if node.get('doc_id') == doc_id:
-        print(f'Title: {node.get(\"title\", \"\")}')
-        print(f'Doc ID: {doc_id}')
-        print(f'Type: {node.get(\"mime_type\", \"\")}')
-        print(f'Modified: {node.get(\"modified_time\", \"\")}')
-        print()
-        print('Content preview:')
-        print(node.get('content_preview', '(none)'))
-        print()
-        links = node.get('links', [])
-        if links:
-            print(f'Links ({len(links)}):')
-            for link in links:
-                print(f'  -> {link}')
-        break
-else:
-    print(f'Document {doc_id} not found in knowledge graph')
-"
+  python3 "${GARC_DIR}/scripts/garc-kg-query.py" show \
+    --cache "${GARC_KG_CACHE}" \
+    --doc-id "${doc_id}"
 }

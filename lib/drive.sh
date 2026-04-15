@@ -16,6 +16,7 @@ garc_drive() {
     upload)        garc_drive_upload "$@" ;;
     create-folder) garc_drive_create_folder "$@" ;;
     create-doc)    garc_drive_create_doc "$@" ;;
+    append-doc)    garc_drive_append_doc "$@" ;;
     share)         garc_drive_share "$@" ;;
     move)          garc_drive_move "$@" ;;
     delete)        garc_drive_delete "$@" ;;
@@ -31,6 +32,7 @@ Subcommands:
   upload        <local_path> [--folder-id <id>] [--name <name>] [--convert]
   create-folder <name> [--parent-id <id>]
   create-doc    <name> [--folder-id <id>] [--content <text>]
+  append-doc    <doc_id> --content <text>
   share         <file_id> --email <email> [--role reader|writer|commenter]
   move          <file_id> --to <folder_id>
   delete        <file_id> [--permanent]
@@ -170,6 +172,24 @@ garc_drive_create_doc() {
   python3 "${DRIVE_HELPER}" create-doc "${name}" \
     --folder-id "${folder_id}" \
     ${content:+--content "${content}"}
+}
+
+garc_drive_append_doc() {
+  local doc_id="${1:-}"
+  shift || true
+  local content=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --content|-c) content="$2"; shift 2 ;;
+      *) doc_id="${doc_id:-$1}"; shift ;;
+    esac
+  done
+
+  [[ -z "${doc_id}" ]] && { echo "Usage: garc drive append-doc <doc_id> --content <text>"; return 1; }
+  [[ -z "${content}" ]] && { echo "Usage: garc drive append-doc <doc_id> --content <text>"; return 1; }
+
+  python3 "${DRIVE_HELPER}" append-doc "${doc_id}" --content "${content}"
 }
 
 garc_drive_share() {

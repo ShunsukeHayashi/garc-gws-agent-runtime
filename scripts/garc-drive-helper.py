@@ -269,17 +269,43 @@ def create_doc(name: str, folder_id: str = "root", content: str = ""):
 
     doc_id = result["id"]
 
-    # Add initial content if provided
+    # Add initial content if provided via batchUpdate
     if content:
-        svc_docs.documents().batchUpdate(
-            documentId=doc_id,
-            body={"requests": [{"insertText": {"location": {"index": 1}, "text": content}}]}
-        ).execute()
+        _doc_insert_text(svc_docs, doc_id, content, append=False)
 
     print(f"✅ Doc created: {name}")
     print(f"   ID:   {doc_id}")
     print(f"   Link: {result.get('webViewLink', '')}")
     return result
+
+
+def _doc_insert_text(svc_docs, doc_id: str, text: str, append: bool = True):
+    """Insert or append text to an existing Google Doc."""
+    if append:
+        # Get current end index
+        doc = svc_docs.documents().get(documentId=doc_id).execute()
+        body = doc.get("body", {})
+        content_items = body.get("content", [])
+        # End index of doc body is the last structural element's endIndex minus 1
+        end_index = content_items[-1]["endIndex"] - 1 if content_items else 1
+        insert_index = max(end_index, 1)
+    else:
+        insert_index = 1  # beginning of new doc
+
+    svc_docs.documents().batchUpdate(
+        documentId=doc_id,
+        body={"requests": [
+            {"insertText": {"location": {"index": insert_index}, "text": text}}
+        ]}
+    ).execute()
+
+
+@with_retry()
+def append_doc(doc_id: str, content: str):
+    """Append text to an existing Google Doc."""
+    svc_docs = build_service("docs", "v1")
+    _doc_insert_text(svc_docs, doc_id, content, append=True)
+    print(f"✅ Content appended to doc: {doc_id}")
 
 
 @with_retry()
@@ -355,12 +381,21 @@ def kg_build(folder_id: str, output: str, depth: int = 3):
 
         try:
             q = f"'{fid}' in parents and trashed = false"
-            results = svc.files().list(
-                q=q, pageSize=50,
-                fields="files(id,name,mimeType,modifiedTime,webViewLink)"
-            ).execute()
-            files = results.get("files", [])
-        except Exception as e:
+            files = []
+            page_token = None
+            while True:
+                kwargs: dict = dict(
+                    q=q, pageSize=100,
+                    fields="nextPageToken,files(id,name,mimeType,modifiedTime,webViewLink)"
+                )
+                if page_token:
+                    kwargs["pageToken"] = page_token
+                results = svc.files().list(**kwargs).execute()
+                files.extend(results.get("files", []))
+                page_token = results.get("nextPageToken")
+                if not page_token:
+                    break
+        except Exception:
             return
 
         for f in files:
@@ -467,6 +502,11 @@ def main():
     cd.add_argument("--folder-id", default="root")
     cd.add_argument("--content", default="")
 
+    # append-doc
+    adp = sub.add_parser("append-doc", help="Append text to an existing Google Doc")
+    adp.add_argument("doc_id", help="Document ID")
+    adp.add_argument("--content", required=True, help="Text to append")
+
     # share
     sh = sub.add_parser("share", help="Share file")
     sh.add_argument("file_id")
@@ -506,6 +546,8 @@ def main():
         create_folder(args.name, args.parent_id)
     elif args.command == "create-doc":
         create_doc(args.name, args.folder_id, args.content)
+    elif args.command == "append-doc":
+        append_doc(args.doc_id, args.content)
     elif args.command == "share":
         share_file(args.file_id, args.email, args.role, not args.no_notify)
     elif args.command == "move":

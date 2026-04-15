@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""
+GARC Forms Helper — Google Forms response ingestion
+list-forms / list-responses / watch (polling loop)
+"""
+
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+from datetime import datetime, timezone
+
+sys.path.insert(0, str(Path(__file__).parent))
+from garc_core import build_service, utc_now
+
+
+def get_svc():
+    return build_service("forms", "v1")
+
+
+def list_forms() -> list:
+    """List Google Forms accessible to this user (via Drive)."""
+    svc_drive = build_service("drive", "v3")
+    results = svc_drive.files().list(
+        q="mimeType='application/vnd.google-apps.form' and trashed=false",
+        pageSize=50,
+        fields="files(id,name,webViewLink,modifiedTime)"
+    ).execute()
+    forms = results.get("files", [])
+    if not forms:
+        print("No Forms found.")
+        return []
+    print(f"Forms ({len(forms)}):")
+    for f in forms:
+        modified = f.get("modifiedTime", "")[:10]
+        print(f"  {f['id']:<44}  {f['name']:<40}  {modified}")
+    return forms
+
+
+def list_responses(form_id: str, max_results: int = 50,
+                   since: str = "", output_format: str = "table") -> list:
+    """List responses to a specific Form."""
+    svc = get_svc()
+    kwargs: dict = {"formId": form_id, "pageSize": max_results}
+    if since:
+        kwargs["filter"] = f"timestamp > {since}"
+
+    result = svc.forms().responses().list(**kwargs).execute()
+    responses = result.get("responses", [])
+
+    if not responses:
+        print(f"No responses for form: {form_id}")
+        return []
+
+    if output_format == "json":
+        print(json.dumps(responses, ensure_ascii=False, indent=2))
+    else:
+        print(f"Responses ({len(responses)}):")
+        for r in responses:
+            resp_id = r.get("responseId", "?")[:16]
+            create_time = r.get("createTime", "")[:19]
+            answers = r.get("answers", {})
+            answer_count = len(answers)
+            print(f"  [{resp_id}]  {create_time}  ({answer_count} answers)")
+
+    return responses
+
+
+def watch_form(form_id: str, agent_id: str, interval: int = 60,
+               max_msgs: int = 10, seen_file_path: str = ""):
+    """Poll a Form for new responses and enqueue them via garc ingress."""
+    import subprocess
+    import os
+
+    garc_dir = os.environ.get("GARC_DIR", "")
+    garc_bin = Path(garc_dir) / "bin" / "garc"
+
+    seen_path = Path(seen_file_path) if seen_file_path else \
+        Path.home() / ".garc" / "cache" / "seen" / f"forms-{form_id[:16]}.txt"
+    seen_path.parent.mkdir(parents=True, exist_ok=True)
+    seen_path.touch()
+
+    try:
+        seen = set(seen_path.read_text().splitlines())
+    except Exception:
+        seen = set()
+
+    svc = get_svc()
+
+    print(f"[forms-poller] Watching form {form_id} (agent={agent_id}, interval={interval}s)")
+
+    while True:
+        try:
+            result = svc.forms().responses().list(
+                formId=form_id, pageSize=max_msgs
+            ).execute()
+            responses = result.get("responses", [])
+        except Exception as e:
+            print(f"[forms-poller] fetch error: {e}", flush=True)
+            time.sleep(interval)
+            continue
+
+        new_seen = []
+        for resp in responses:
+            resp_id = resp.get("responseId", "")
+            if not resp_id or resp_id in seen:
+                new_seen.append(resp_id)
+                continue
+
+            # Build a summary of the answers
+            answers = resp.get("answers", {})
+            answer_lines = []
+            for q_id, ans in list(answers.items())[:5]:  # first 5 questions
+                text_answers = ans.get("textAnswers", {}).get("answers", [])
+                for ta in text_answers:
+                    answer_lines.append(ta.get("value", ""))
+
+            create_time = resp.get("createTime", "")[:10]
+            summary = "; ".join(answer_lines[:3]) if answer_lines else "(no answers)"
+            text = f"New Google Form response ({create_time}): {summary[:120]}"
+
+            cmd = [str(garc_bin), "ingress", "enqueue",
+                   "--text", text,
+                   "--source", "google_forms",
+                   "--sender", form_id,
+                   "--agent", agent_id]
+
+            env = dict(os.environ, GARC_DIR=garc_dir)
+            r = subprocess.run(cmd, capture_output=True, text=True, env=env)
+            if r.returncode == 0:
+                print(f"[forms-poller] Enqueued response: {resp_id[:16]}", flush=True)
+            else:
+                print(f"[forms-poller] Enqueue failed: {r.stderr.strip()}", flush=True)
+
+            new_seen.append(resp_id)
+
+        if new_seen:
+            with open(seen_path, "a") as f:
+                f.write("\n".join(new_seen) + "\n")
+
+        if interval == 0:
+            break  # single-shot mode
+        time.sleep(interval)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="GARC Forms Helper")
+    sub = parser.add_subparsers(dest="command")
+
+    sub.add_parser("list-forms", help="List accessible Google Forms")
+
+    lrp = sub.add_parser("list-responses", help="List responses for a form")
+    lrp.add_argument("form_id", help="Form ID")
+    lrp.add_argument("--max", type=int, default=50)
+    lrp.add_argument("--since", default="", help="ISO timestamp filter")
+    lrp.add_argument("--format", default="table", choices=["table", "json"])
+
+    wp = sub.add_parser("watch", help="Poll form for new responses and enqueue")
+    wp.add_argument("form_id", help="Form ID to watch")
+    wp.add_argument("--agent", required=True, help="GARC agent ID")
+    wp.add_argument("--interval", type=int, default=60, help="Poll interval in seconds")
+    wp.add_argument("--max", type=int, default=10)
+    wp.add_argument("--seen-file", default="", help="Path to seen-IDs file")
+
+    args = parser.parse_args()
+
+    if args.command == "list-forms":
+        list_forms()
+    elif args.command == "list-responses":
+        list_responses(args.form_id, args.max, args.since, args.format)
+    elif args.command == "watch":
+        watch_form(args.form_id, args.agent, args.interval, args.max, args.seen_file)
+    else:
+        parser.print_help()
+
+
+if __name__ == "__main__":
+    main()

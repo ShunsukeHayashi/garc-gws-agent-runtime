@@ -29,6 +29,7 @@ garc_ingress() {
     fail)          _ingress_fail "$@" ;;
     verify)        _ingress_verify "$@" ;;
     stats)         _ingress_stats "$@" ;;
+    stale-reset)   _ingress_stale_reset "$@" ;;
     *)
       cat <<EOF
 Usage: garc ingress <subcommand> [options]
@@ -48,6 +49,7 @@ Subcommands:
   fail          --queue-id <id> [--note <text>]
   verify        --queue-id <id>             Verify expected output was produced
   stats                                      Queue statistics
+  stale-reset   [--timeout <minutes>]        Reset in_progress items older than N min (default: 30)
 
 Examples:
   garc ingress enqueue --text "Send weekly report to manager"
@@ -314,6 +316,36 @@ _ingress_run_once() {
       _ingress_update_status "${queue_id}" "blocked"
       source "${GARC_LIB}/approve.sh"
       garc_approve_create "${message}"
+
+      # ── Notify approver via Gmail ─────────────────────────────
+      local approval_email="${GARC_APPROVAL_EMAIL:-}"
+      if [[ -n "${approval_email}" ]]; then
+        local subject="[GARC Approval Required] ${message:0:60}"
+        local body
+        body="$(cat <<BODY
+A task requires your approval before execution.
+
+Queue ID : ${queue_id}
+Agent    : ${agent}
+Task     : ${message}
+
+To approve:
+  garc ingress approve --queue-id ${queue_id}
+  garc ingress resume  --queue-id ${queue_id}
+
+To reject:
+  garc ingress fail --queue-id ${queue_id} --note "rejected by approver"
+BODY
+)"
+        python3 "${GARC_DIR}/scripts/garc-gmail-helper.py" send \
+          --to "${approval_email}" \
+          --subject "${subject}" \
+          --body "${body}" 2>/dev/null \
+          && echo "📧 Approval notification sent to: ${approval_email}" \
+          || echo "⚠️  Could not send approval email (check GARC_APPROVAL_EMAIL and Gmail auth)"
+      else
+        echo "   ℹ️  Set GARC_APPROVAL_EMAIL in ~/.garc/config.env to enable email notifications."
+      fi
     fi
     echo ""
     echo "Status set to: blocked"
@@ -605,6 +637,68 @@ PY
 
 _ingress_stats() {
   python3 "${INGRESS_HELPER}" stats --queue-dir "${GARC_QUEUE_DIR}"
+}
+
+# ─────────────────────────────────────────────────────────────────
+# stale-reset — reset in_progress items that have been stuck too long
+# ─────────────────────────────────────────────────────────────────
+
+_ingress_stale_reset() {
+  local timeout_min=30
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --timeout|-t) timeout_min="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  echo "Scanning for in_progress items older than ${timeout_min} minutes..."
+
+  python3 - "${GARC_QUEUE_DIR}" "${timeout_min}" <<'PY'
+import json, sys, os
+from pathlib import Path
+from datetime import datetime, timezone, timedelta
+
+queue_dir = Path(sys.argv[1])
+timeout_min = int(sys.argv[2])
+cutoff = datetime.now(timezone.utc) - timedelta(minutes=timeout_min)
+
+reset_count = 0
+if not queue_dir.exists():
+    print("Queue directory not found.")
+    sys.exit(0)
+
+for f in queue_dir.glob("*.jsonl"):
+    try:
+        line = f.read_text().strip().splitlines()[0]
+        item = json.loads(line)
+    except Exception:
+        continue
+
+    if item.get("status") != "in_progress":
+        continue
+
+    updated_at_str = item.get("updated_at") or item.get("created_at", "")
+    try:
+        updated_at = datetime.fromisoformat(updated_at_str.replace("Z", "+00:00"))
+    except Exception:
+        continue
+
+    if updated_at < cutoff:
+        age_min = int((datetime.now(timezone.utc) - updated_at).total_seconds() / 60)
+        item["status"] = "pending"
+        item["updated_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        item["note"] = f"[stale-reset] was in_progress for {age_min}min"
+        f.write_text(json.dumps(item) + "\n")
+        print(f"  ↻ Reset: {item.get('queue_id','')[:16]} (stuck {age_min}min)")
+        reset_count += 1
+
+if reset_count == 0:
+    print(f"  No stale items found (threshold: {timeout_min}min).")
+else:
+    print(f"\n✅ Reset {reset_count} stale item(s) → pending")
+PY
 }
 
 # ─────────────────────────────────────────────────────────────────

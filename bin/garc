@@ -5,14 +5,38 @@
 set -euo pipefail
 
 GARC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# ── Python version gate ────────────────────────────────────────────────────
+if ! python3 -c "import sys; assert sys.version_info >= (3,10), f'Python 3.10+ required, got {sys.version}'" 2>/dev/null; then
+  _PY_VER=$(python3 --version 2>&1)
+  echo "❌ GARC requires Python 3.10 or higher." >&2
+  echo "   Detected: ${_PY_VER}" >&2
+  echo "   Install Python 3.10+: https://www.python.org/downloads/" >&2
+  exit 1
+fi
 GARC_LIB="${GARC_DIR}/lib"
 GARC_CONFIG="${HOME}/.garc"
 GARC_CONFIG_ENV="${GARC_CONFIG}/config.env"
 
-# Load config if present
+# Load base config if present
 if [[ -f "${GARC_CONFIG_ENV}" ]]; then
   # shellcheck source=/dev/null
   source "${GARC_CONFIG_ENV}"
+fi
+
+# Load profile-specific config (overrides base config)
+GARC_PROFILE="${GARC_PROFILE:-}"
+if [[ -n "${GARC_PROFILE}" ]]; then
+  _PROFILE_ENV="${GARC_CONFIG}/profiles/${GARC_PROFILE}/config.env"
+  if [[ -f "${_PROFILE_ENV}" ]]; then
+    # shellcheck source=/dev/null
+    source "${_PROFILE_ENV}"
+  fi
+  # Use profile-specific token if not already overridden
+  _PROFILE_TOKEN="${GARC_CONFIG}/profiles/${GARC_PROFILE}/token.json"
+  if [[ -f "${_PROFILE_TOKEN}" && -z "${GARC_TOKEN_FILE:-}" ]]; then
+    export GARC_TOKEN_FILE="${_PROFILE_TOKEN}"
+  fi
 fi
 
 # Defaults
@@ -129,6 +153,11 @@ Usage: garc <command> [subcommand] [options]
   ingress verify   --queue-id <id>
   ingress stats
 
+━━━ Google Forms (Response Pipeline) ━━━━━━━━━━━━━━━━━━━━━━━━━━
+  forms list                  List accessible Google Forms
+  forms responses <id>        List form responses
+  forms watch <id> --agent    Poll form and auto-enqueue new responses
+
 ━━━ Daemon (Gmail Poller) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   daemon start     [--interval <sec>] [--agent <id>]
   daemon stop
@@ -143,8 +172,18 @@ Usage: garc <command> [subcommand] [options]
   kg query "<concept>"        Search knowledge graph
   kg show <doc_id>            Show doc + links
 
+━━━ Profiles (Multi-tenant) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  profile list                List all tenant profiles
+  profile use <name>          Activate a profile (eval output)
+  profile add <name>          Create a new profile
+  profile show [<name>]       Show profile config
+  profile remove <name>       Delete a profile
+  profile current             Show active profile
+
 ━━━ System ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   heartbeat                   Log system state to Sheets
+  audit list [--agent <id>] [--since YYYY-MM-DD]  View audit log
+  doctor                      Check Python version and dependencies
 
 Options:
   --help, -h      Show this help
@@ -173,6 +212,31 @@ while [[ $# -gt 0 ]]; do
 done
 
 export DEBUG DRY_RUN GARC_DIR GARC_LIB GARC_CONFIG GARC_CACHE_DIR GARC_CACHE_TTL
+
+# ── Non-blocking audit log ─────────────────────────────────────────────────
+# Fires in background so it never blocks or fails the main command.
+_garc_audit_log() {
+  local cmd="$1"
+  local args_str="$2"
+  local result="${3:-ok}"
+  local sheets_id="${GARC_SHEETS_ID:-}"
+  local agent_id="${GARC_DEFAULT_AGENT:-}"
+
+  [[ -z "${sheets_id}" ]] && return 0
+  [[ "${cmd}" == "audit" ]] && return 0   # don't audit audit itself
+
+  (
+    python3 "${GARC_DIR}/scripts/garc-sheets-helper.py" audit-append \
+      --sheets-id "${sheets_id}" \
+      --agent-id "${agent_id}" \
+      --cmd "${cmd}" \
+      --args "${args_str}" \
+      --result "${result}" \
+      --user "${USER:-}" \
+      --timestamp "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+      2>/dev/null
+  ) &
+}
 
 COMMAND="${1:-help}"
 shift || true
@@ -253,6 +317,61 @@ case "${COMMAND}" in
   daemon)
     source "${GARC_LIB}/daemon.sh"
     garc_daemon "$@"
+    ;;
+  audit)
+    source "${GARC_LIB}/audit.sh"
+    _garc_audit_log "audit" "$*"
+    garc_audit "$@"
+    ;;
+  profile)
+    source "${GARC_LIB}/profile.sh"
+    garc_profile "$@"
+    ;;
+  forms)
+    source "${GARC_LIB}/forms.sh"
+    garc_forms "$@"
+    ;;
+  doctor)
+    python3 - <<'PY'
+import sys, importlib, subprocess
+
+print("GARC Doctor — Environment Check")
+print("─" * 40)
+
+# Python version
+pv = sys.version_info
+status = "✅" if pv >= (3, 10) else "❌"
+print(f"{status} Python {pv.major}.{pv.minor}.{pv.micro}  (required: >=3.10,<3.13)")
+
+# Required packages
+required = [
+    ("googleapiclient",  "google-api-python-client"),
+    ("google.auth",      "google-auth"),
+    ("google_auth_oauthlib", "google-auth-oauthlib"),
+    ("httplib2",         "google-auth-httplib2"),
+    ("requests",         "requests"),
+    ("yaml",             "pyyaml"),
+    ("dateutil",         "python-dateutil"),
+    ("rich",             "rich"),
+]
+print()
+print("Dependencies:")
+all_ok = True
+for module, pkg in required:
+    try:
+        importlib.import_module(module)
+        print(f"  ✅ {pkg}")
+    except ImportError:
+        print(f"  ❌ {pkg}  →  pip install {pkg}")
+        all_ok = False
+
+print()
+if all_ok:
+    print("✅ All checks passed.")
+else:
+    print("⚠️  Some packages missing. Run: pip install -r requirements.txt")
+    sys.exit(1)
+PY
     ;;
   help|--help|-h)
     usage
