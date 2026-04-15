@@ -222,7 +222,7 @@
     "read_contacts": {
       "scopes": [
         "https://www.googleapis.com/auth/contacts.readonly",
-        "https://www.googleapis.com/auth/people.readonly"
+        "https://www.googleapis.com/auth/directory.readonly"
       ],
       "identity": "user_access_token",
       "gate": "none",
@@ -238,7 +238,7 @@
     },
     "search_people": {
       "scopes": [
-        "https://www.googleapis.com/auth/people.readonly"
+        "https://www.googleapis.com/auth/directory.readonly"
       ],
       "identity": "user_access_token",
       "gate": "none",
@@ -364,7 +364,7 @@
         "https://www.googleapis.com/auth/calendar.readonly",
         "https://www.googleapis.com/auth/tasks.readonly",
         "https://www.googleapis.com/auth/contacts.readonly",
-        "https://www.googleapis.com/auth/people.readonly"
+        "https://www.googleapis.com/auth/directory.readonly"
       ],
       "description": "Read-only access to all GWS resources"
     },
@@ -379,7 +379,7 @@
         "https://www.googleapis.com/auth/calendar",
         "https://www.googleapis.com/auth/tasks",
         "https://www.googleapis.com/auth/contacts.readonly",
-        "https://www.googleapis.com/auth/people.readonly"
+        "https://www.googleapis.com/auth/directory.readonly"
       ],
       "description": "Write access to owned resources and send email"
     },
@@ -409,7 +409,7 @@
         "https://www.googleapis.com/auth/calendar",
         "https://www.googleapis.com/auth/tasks",
         "https://www.googleapis.com/auth/contacts.readonly",
-        "https://www.googleapis.com/auth/people.readonly",
+        "https://www.googleapis.com/auth/directory.readonly",
         "https://www.googleapis.com/auth/chat.messages"
       ],
       "description": "Back-office automation profile for office-work agents"
