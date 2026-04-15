@@ -82,7 +82,17 @@ garc_drive_search() {
 }
 
 garc_drive_info() {
-  [[ -z "${1:-}" ]] && { echo "Usage: garc drive info <file_id>"; return 1; }
+  # No arg → show workspace folder info
+  if [[ -z "${1:-}" ]]; then
+    local folder_id="${GARC_DRIVE_FOLDER_ID:-}"
+    if [[ -z "${folder_id}" ]]; then
+      echo "No GARC_DRIVE_FOLDER_ID set. Run 'garc setup all' first."
+      echo "Usage: garc drive info <file_id>"
+      return 1
+    fi
+    python3 "${DRIVE_HELPER}" info "${folder_id}"
+    return $?
+  fi
   python3 "${DRIVE_HELPER}" info "$1"
 }
 

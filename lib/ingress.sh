@@ -289,7 +289,7 @@ _ingress_run_once() {
   done
 
   local next_raw
-  next_raw=$(_ingress_next --agent "${agent}")
+  next_raw=$(_ingress_next --agent "${agent}") || true
 
   if [[ "${next_raw}" == "(no pending items)" ]]; then
     echo "✅ Queue is empty — nothing to run."
@@ -367,8 +367,8 @@ _ingress_execute_stub() {
   [[ -z "${queue_id}" ]] && { echo "Usage: garc ingress execute-stub --queue-id <id>"; return 1; }
 
   local queue_file
-  queue_file=$(_find_queue_file "${queue_id}")
-  [[ -z "${queue_file}" ]] && { echo "Queue item not found: ${queue_id}" >&2; return 1; }
+  queue_file=$(_find_queue_file "${queue_id}") || true
+  [[ -z "${queue_file}" ]] && { echo "Queue item not found: ${queue_id}"; return 1; }
 
   python3 "${INGRESS_HELPER}" execute-stub --queue-file "${queue_file}"
 }
@@ -390,8 +390,8 @@ _ingress_context() {
   [[ -z "${queue_id}" ]] && { echo "Usage: garc ingress context --queue-id <id>"; return 1; }
 
   local queue_file
-  queue_file=$(_find_queue_file "${queue_id}")
-  [[ -z "${queue_file}" ]] && { echo "Queue item not found: ${queue_id}" >&2; return 1; }
+  queue_file=$(_find_queue_file "${queue_id}") || true
+  [[ -z "${queue_file}" ]] && { echo "Queue item not found: ${queue_id}"; return 1; }
 
   local agent_id="${GARC_DEFAULT_AGENT:-main}"
   local context_path="${GARC_CACHE_DIR:-${HOME}/.garc/cache}/workspace/${agent_id}/AGENT_CONTEXT.md"
@@ -453,8 +453,8 @@ _ingress_delegate() {
   }
 
   local queue_file
-  queue_file=$(_find_queue_file "${queue_id}")
-  [[ -z "${queue_file}" ]] && { echo "Queue item not found: ${queue_id}" >&2; return 1; }
+  queue_file=$(_find_queue_file "${queue_id}") || true
+  [[ -z "${queue_file}" ]] && { echo "Queue item not found: ${queue_id}"; return 1; }
 
   python3 - <<PY
 import json
@@ -518,7 +518,7 @@ _ingress_done() {
   [[ -z "${queue_id}" ]] && { echo "Usage: garc ingress done --queue-id <id> [--note <text>]"; return 1; }
 
   _ingress_update_status "${queue_id}" "done" "${note}" \
-    || { echo "Queue item not found: ${queue_id}" >&2; return 1; }
+    || { echo "Queue item not found: ${queue_id}"; return 1; }
   echo "✅ Queue item ${queue_id} — done."
   [[ -n "${note}" ]] && echo "   Note: ${note}"
 
@@ -546,7 +546,7 @@ _ingress_fail() {
   [[ -z "${queue_id}" ]] && { echo "Usage: garc ingress fail --queue-id <id> [--note <text>]"; return 1; }
 
   _ingress_update_status "${queue_id}" "failed" "${note}" \
-    || { echo "Queue item not found: ${queue_id}" >&2; return 1; }
+    || { echo "Queue item not found: ${queue_id}"; return 1; }
   echo "❌ Queue item ${queue_id} — failed."
   [[ -n "${note}" ]] && echo "   Reason: ${note}"
 }
@@ -568,8 +568,8 @@ _ingress_verify() {
   [[ -z "${queue_id}" ]] && { echo "Usage: garc ingress verify --queue-id <id>"; return 1; }
 
   local queue_file
-  queue_file=$(_find_queue_file "${queue_id}")
-  [[ -z "${queue_file}" ]] && { echo "Queue item not found: ${queue_id}" >&2; return 1; }
+  queue_file=$(_find_queue_file "${queue_id}") || true
+  [[ -z "${queue_file}" ]] && { echo "Queue item not found: ${queue_id}"; return 1; }
 
   python3 - <<PY
 import json
@@ -634,7 +634,7 @@ _ingress_update_status() {
   local note="${3:-}"
 
   local queue_file
-  queue_file=$(_find_queue_file "${queue_id}")
+  queue_file=$(_find_queue_file "${queue_id}") || true
   [[ -z "${queue_file}" ]] && return 1
 
   # Pass note via argv to avoid shell→Python string injection
