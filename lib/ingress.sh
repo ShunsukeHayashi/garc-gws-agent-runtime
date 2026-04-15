@@ -517,7 +517,8 @@ _ingress_done() {
 
   [[ -z "${queue_id}" ]] && { echo "Usage: garc ingress done --queue-id <id> [--note <text>]"; return 1; }
 
-  _ingress_update_status "${queue_id}" "done" "${note}"
+  _ingress_update_status "${queue_id}" "done" "${note}" \
+    || { echo "Queue item not found: ${queue_id}" >&2; return 1; }
   echo "✅ Queue item ${queue_id} — done."
   [[ -n "${note}" ]] && echo "   Note: ${note}"
 
@@ -544,7 +545,8 @@ _ingress_fail() {
 
   [[ -z "${queue_id}" ]] && { echo "Usage: garc ingress fail --queue-id <id> [--note <text>]"; return 1; }
 
-  _ingress_update_status "${queue_id}" "failed" "${note}"
+  _ingress_update_status "${queue_id}" "failed" "${note}" \
+    || { echo "Queue item not found: ${queue_id}" >&2; return 1; }
   echo "❌ Queue item ${queue_id} — failed."
   [[ -n "${note}" ]] && echo "   Reason: ${note}"
 }
